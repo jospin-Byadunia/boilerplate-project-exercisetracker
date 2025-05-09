@@ -3,65 +3,77 @@ const Exercise = require('../Models/exerciseModel')
 
 exports.createUser = async (req, res)=>{
     if(req.body){
-        const user = req.body
-        console.log(user)
-    await User.create(user);
+        const user = await User.create(req.body);
     res.status(201).json({
-        status: 'success',
-        data: {
-          data: user,
-        },
+       username:user.username,
+       _id:user._id
       });
     }
     
 }
 
 exports.createExercise = async (req, res)=>{
+  const _id = req.params._id
     if(req.body){
-        const exercise = req.body;
-        await Exercise.create(exercise)
+        const { description, duration, userId, date } = req.body;
+             
+        const user = await User.findById(_id);
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        console.log(date, duration, user)
+        const exercise = await Exercise.create({userId:user._id,username:user.username,description, duration, date:date?new Date(date):new Date()})
+        console.log(exercise)
         res.status(201).json({
-            status: 'success',
-            data: {
-              data: exercise,
-            },
-          });
+            username: user.username,
+            _id: user._id,
+            date: new Date(exercise.date).toDateString(),
+            description:exercise.description,
+            duration: exercise.duration
+        });
     }
 }
 
-exports.getLogs = async (req, res)=>{
-    const userId = req.params._id;
-    const { from, to, limit } = req.query;
+exports.getLogs = async (req, res) => {
+  const userId = req.params._id;
+  const { from, to, limit } = req.query;
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    let filter = { userId };
+
+    if (from || to) {
+      filter.date = {};
+      if (from) filter.date.$gte = new Date(from);
+      if (to) filter.date.$lte = new Date(to);
+    }
+
+    let query = Exercise.find(filter).select('description duration date');
+    if (limit) query = query.limit(parseInt(limit));
+
+    const exercises = await query;
+
+    const formattedLog = exercises.map(ex => ({
+      description: ex.description,
+      duration: ex.duration,
+      date:ex.date.toDateString() 
+    }));
+    res.json({
+      _id: user._id,
+      username: user.username,
+      count: formattedLog.length,
+      log: formattedLog
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getAllUsers = async (req, res) =>{
     try {
-        const user = await User.findById(userId);
-        if (!user) return res.status(404).json({ error: 'User not found' });
-    
-        let query = { userId };
-    
-        if (from || to) {
-          query.date = {};
-          if (from) query.date.$gte = new Date(from);
-          if (to) query.date.$lte = new Date(to);
-        }
-    
-        let exercises = Exercise.find(query).select('description duration date');
-        if (limit) exercises = exercises.limit(parseInt(limit));
-    
-        const log = await exercises.lean();
-    
-        const formattedLog = log.map(ex => ({
-          description: ex.description,
-          duration: ex.duration,
-          date: new Date(ex.date).toDateString() // "Mon Jan 01 1990"
-        }));
-    
-        res.json({
-          _id: user._id,
-          username: user.username,
-          count: formattedLog.length,
-          log: formattedLog
-        });
-    
+        const users = await User.find({}, 'username _id');
+        res.json(users);
       } catch (err) {
         res.status(500).json({ error: err.message });
       }
